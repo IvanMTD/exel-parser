@@ -31,4 +31,8 @@ public class AgeGroup {
     private int maxAge;
     private int disciplineId;
     private Set<Integer> qualificationIds = new HashSet<>();
+
+    public void addQualification(Qualification qualification){
+        qualificationIds.add(qualification.getId());
+    }
 }

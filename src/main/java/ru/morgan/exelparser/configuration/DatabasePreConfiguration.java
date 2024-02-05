@@ -13,11 +13,9 @@ import ru.morgan.exelparser.repositories.*;
 
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.security.Principal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.regex.Pattern;
 
 @Configuration
 public class DatabasePreConfiguration {
@@ -56,6 +54,83 @@ public class DatabasePreConfiguration {
 
         //addParticipant(subjectRepository,participantRepository,rowIter);
         //addAgeGroup(sportRepository,disciplineRepository,groupRepository,rowIter);
+
+        String currentSport = "";
+        String currentDiscipline = "";
+        String currentGroup = "";
+        while (rowIter.hasNext()){
+            Row row = rowIter.next();
+            Cell sportCell = row.getCell(0);
+            Cell groupCell = row.getCell(1);
+            Cell disciplineCell = row.getCell(2);
+            Cell categoryCell = row.getCell(4);
+            Cell birthdayCell = row.getCell(5);
+            Cell lastnameCell = row.getCell(6);
+            Cell nameCell = row.getCell(7);
+            if(sportCell != null){
+                currentSport = sportCell.toString();
+            }
+            if(disciplineCell != null){
+                currentDiscipline = disciplineCell.toString();
+            }
+            if(groupCell != null){
+                currentGroup = groupCell.toString();
+            }
+            String categoryTitle = "";
+            if(categoryCell != null){
+                categoryTitle = categoryCell.toString();
+            }
+            String birthdayInfo = "";
+            if(birthdayCell != null){
+                birthdayInfo = birthdayCell.toString();
+            }
+            String lastname = "";
+            if(lastnameCell != null){
+                lastname = lastnameCell.toString();
+            }
+            String name = "";
+            if(nameCell != null){
+                name = nameCell.toString();
+            }
+
+            if(!categoryTitle.equals("")){
+                Category category = parseCategory(categoryTitle);
+                Participant participant = null;
+                LocalDate birthday = parseLocalDate(birthdayInfo);
+                if(birthday != null && !lastname.equals("") && !name.equals("")){
+                    participant = participantRepository.findByLastnameAndNameAndBirthday(lastname,name,birthday);
+                }
+                if(participant != null){
+                    if(!currentSport.equals("") && !currentDiscipline.equals("") && !currentGroup.equals("")){
+                        TypeOfSport sport = sportRepository.findByTitle(currentSport);
+                        if(sport != null) {
+                            List<Discipline> disciplines = disciplineRepository.findAllByIdIn(sport.getDisciplineIds());
+                            String finalCurrentDiscipline = currentDiscipline;
+                            Optional<Discipline> disciplineOptional = disciplines.stream().filter(d -> d.getTitle().equals(finalCurrentDiscipline)).findAny();
+                            if (disciplineOptional.isPresent()) {
+                                Discipline discipline = disciplineOptional.get();
+                                List<AgeGroup> ageGroups = groupRepository.findAllByIdIn(discipline.getAgeGroupIds());
+                                String finalCurrentGroup = currentGroup;
+                                Optional<AgeGroup> ageGroupOptional = ageGroups.stream().findAny().filter(g -> g.getTitle().equals(finalCurrentGroup)).stream().findAny();
+                                if (ageGroupOptional.isPresent()) {
+                                    AgeGroup ageGroup = ageGroupOptional.get();
+                                    Qualification qualification = new Qualification();
+                                    qualification.setCategory(category);
+                                    qualification.setParticipantId(participant.getId());
+                                    qualification.setAgeGroupId(ageGroup.getId());
+                                    qualification = qualificationRepository.save(qualification);
+                                    ageGroup.addQualification(qualification);
+                                    participant.addQualification(qualification);
+                                    ageGroup = groupRepository.save(ageGroup);
+                                    participant = participantRepository.save(participant);
+                                    System.out.println(participant.getFullName() + " | " + sport.getTitle() + " | " + discipline.getTitle() + " | " + ageGroup.getTitle() + " | " + qualification.getCategory().getTitle());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         try {
             wb.close();
@@ -410,6 +485,70 @@ public class DatabasePreConfiguration {
         }else{
             return null;
         }
+    }
+
+    private Category parseCategory(String categoryTitle){
+        Category category = Category.BR;
+
+        if(categoryTitle.contains("1")){
+            if(categoryTitle.contains("р") || categoryTitle.contains("Р")){
+                if(!categoryTitle.contains("ю")) {
+                    if(!categoryTitle.contains("\n") && categoryTitle.length() < 9) {
+                        category = Category.R1;
+                    }
+                }else{
+                    if(!categoryTitle.contains("\n") && !categoryTitle.contains("   ")) {
+                        category = Category.YN1;
+                    }
+                }
+            }
+        }
+
+        if(categoryTitle.contains("2")){
+            if(categoryTitle.contains("р") || categoryTitle.contains("Р")){
+                if(!categoryTitle.contains("ю")) {
+                    if(!categoryTitle.contains("\n") && categoryTitle.length() < 9) {
+                        category = Category.R2;
+                    }
+                }else{
+                    if(!categoryTitle.contains("\n") && !categoryTitle.contains("   ")) {
+                        category = Category.YN2;
+                    }
+                }
+            }
+        }
+
+        if(categoryTitle.contains("3")){
+            if(categoryTitle.contains("р") || categoryTitle.contains("Р")){
+                if(!categoryTitle.contains("ю")) {
+                    if(!categoryTitle.contains("\n") && categoryTitle.length() < 9) {
+                        category = Category.R3;
+                    }
+                }else{
+                    if(!categoryTitle.contains("\n") && !categoryTitle.contains("   ")) {
+                        category = Category.YN3;
+                    }
+                }
+            }
+        }
+
+        if(categoryTitle.equals("КМС")){
+            category = Category.KMS;
+        }
+
+        if(categoryTitle.equals("МС")){
+            category = Category.MS;
+        }
+
+        if(categoryTitle.equals("ЗМС")){
+            category = Category.ZMS;
+        }
+
+        if(categoryTitle.equals("МСМК")){
+            category = Category.MSMK;
+        }
+
+        return category;
     }
 
     private Season parseSeason(String season){

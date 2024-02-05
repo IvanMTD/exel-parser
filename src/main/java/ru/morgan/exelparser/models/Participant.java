@@ -40,4 +40,12 @@ public class Participant {
     public void addSubject(Subject subject){
         subjectIds.add(subject.getId());
     }
+
+    public void addQualification(Qualification qualification) {
+        qualificationIds.add(qualification.getId());
+    }
+
+    public String getFullName(){
+        return lastname + " " + name + " " + middleName;
+    }
 }
