@@ -4,5 +4,5 @@ import org.springframework.data.repository.CrudRepository;
 import ru.morgan.exelparser.models.Qualification;
 
 public interface QualificationRepository extends CrudRepository<Qualification,Integer> {
-
+    Qualification findQualificationByTypeOfSportIdAndParticipantId(int sportId, int partId);
 }

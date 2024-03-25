@@ -29,14 +29,64 @@ public class TypeOfSport {
     private Season season;
     @Enumerated(EnumType.STRING)
     private SportFilterType sportFilterType;
-    Set<Integer> subjectIds = new HashSet<>();
-    Set<Integer> disciplineIds = new HashSet<>();
+    private Set<Integer> baseSportIds = new HashSet<>();
+    private Set<Integer> disciplineIds = new HashSet<>();
+    private Set<Integer> ageGroupIds = new HashSet<>();
+    private Set<Integer> qualificationIds = new HashSet<>();
+
+    public void addBaseSport(BaseSport baseSport){
+        if(baseSportIds == null){
+            baseSportIds = new HashSet<>();
+        }
+        baseSportIds.add(baseSport.getId());
+    }
+
+    public void addBaseSportId(int baseSportId){
+        if(baseSportIds == null){
+            baseSportIds = new HashSet<>();
+        }
+        baseSportIds.add(baseSportId);
+    }
 
     public void addDiscipline(Discipline discipline){
+        if(disciplineIds == null){
+            disciplineIds = new HashSet<>();
+        }
         disciplineIds.add(discipline.getId());
     }
 
-    public void addSubject(Subject subject){
-        subjectIds.add(subject.getId());
+    public void addDisciplineId(int disciplineId){
+        if(disciplineIds == null){
+            disciplineIds = new HashSet<>();
+        }
+        disciplineIds.add(disciplineId);
+    }
+
+    public void addAgeGroup(AgeGroup ageGroup){
+        if(ageGroupIds == null){
+            ageGroupIds = new HashSet<>();
+        }
+        ageGroupIds.add(ageGroup.getId());
+    }
+
+    public void addAgeGroupId(int ageGroupId){
+        if(ageGroupIds == null){
+            ageGroupIds = new HashSet<>();
+        }
+        ageGroupIds.add(ageGroupId);
+    }
+
+    public void addQualification(Qualification qualification){
+        if(qualificationIds == null){
+            qualificationIds = new HashSet<>();
+        }
+        qualificationIds.add(qualification.getId());
+    }
+
+    public void addQualificationId(int qualificationId){
+        if(qualificationIds == null){
+            qualificationIds = new HashSet<>();
+        }
+        qualificationIds.add(qualificationId);
     }
 }

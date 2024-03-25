@@ -3,7 +3,8 @@ package ru.morgan.exelparser.models;
 public enum Season {
     WINTER("Зимний"),
     SUMMER("Летний"),
-    ALL("Всесезонный");
+    ALL("Всесезонный"),
+    NO("");
 
     private final String title;
 

@@ -3,7 +3,8 @@ package ru.morgan.exelparser.models;
 public enum SportFilterType {
     OLYMPIC("Олимпийский"),
     NO_OLYMPIC("Неолимпийский"),
-    ADAPTIVE("Адаптивный");
+    ADAPTIVE("Адаптивный"),
+    NO("");
 
     private final String title;
 

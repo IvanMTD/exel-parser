@@ -24,16 +24,31 @@ public class Subject {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
     private String title;
+    private String iso;
     @Enumerated(EnumType.STRING)
     private FederalDistrict federalDistrict;
-    private Set<Integer> typeOfSportIds = new HashSet<>();
-    private Set<Integer> participantIds = new HashSet<>();
+    private Set<Integer> sportSchoolIds = new HashSet<>();
+    private Set<Integer> baseSportIds = new HashSet<>();
 
-    public void addTypeOfSport(TypeOfSport typeOfSport){
-        typeOfSportIds.add(typeOfSport.getId());
+    public void addSportSchool(SportSchool sportSchool){
+        if(sportSchoolIds == null){
+            sportSchoolIds = new HashSet<>();
+        }
+        sportSchoolIds.add(sportSchool.getId());
     }
 
-    public void addParticipant(Participant participant){
-        participantIds.add(participant.getId());
+    public void addSportSchoolId(int sportSchoolId){
+        if(sportSchoolIds == null){
+            sportSchoolIds = new HashSet<>();
+        }
+        sportSchoolIds.add(sportSchoolId);
+    }
+
+    public void addBaseSport(BaseSport baseSport){
+        baseSportIds.add(baseSport.getId());
+    }
+
+    public void addBaseSportId(int baseSportId){
+        baseSportIds.add(baseSportId);
     }
 }
