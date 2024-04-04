@@ -50,8 +50,8 @@ public class DatabasePreConfiguration {
             @Override
             public void run(String... args) throws Exception {
                 MinioClient minioClient = MinioClient.builder()
-                        .endpoint("http://45.95.234.119:9000")
-                        .credentials("morgan", "Vjh911ufy!")
+                        .endpoint("")
+                        .credentials("", "")
                         .build();
                 //parseEkp(ekpRepository,sportRepository,disciplineRepository);
                 parserSportObject(sportObjectRepository, minioRepository, minioClient);
