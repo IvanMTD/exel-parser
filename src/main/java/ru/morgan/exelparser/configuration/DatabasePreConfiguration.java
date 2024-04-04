@@ -2,7 +2,8 @@ package ru.morgan.exelparser.configuration;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.poi.hssf.usermodel.HSSFSheet;
+import io.minio.MinioClient;
+import lombok.Data;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -12,28 +13,190 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.UriComponentsBuilder;
 import ru.morgan.exelparser.models.*;
 import ru.morgan.exelparser.models.map.GeocodeResponse;
 import ru.morgan.exelparser.repositories.*;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.net.URI;
+import java.io.*;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Configuration
 public class DatabasePreConfiguration {
     @Bean
-    public CommandLineRunner dataLoader(EkpRepository ekpRepository, SportRepository sportRepository, DisciplineRepository disciplineRepository){
+    public CommandLineRunner dataLoader(
+            EkpRepository ekpRepository,
+            SportRepository sportRepository,
+            DisciplineRepository disciplineRepository,
+            SportObjectRepository sportObjectRepository,
+            MinioRepository minioRepository
+    ){
         return new CommandLineRunner() {
             @Override
             public void run(String... args) throws Exception {
-                parseEkp(ekpRepository,sportRepository,disciplineRepository);
+                MinioClient minioClient = MinioClient.builder()
+                        .endpoint("http://45.95.234.119:9000")
+                        .credentials("morgan", "Vjh911ufy!")
+                        .build();
+                //parseEkp(ekpRepository,sportRepository,disciplineRepository);
+                parserSportObject(sportObjectRepository, minioRepository, minioClient);
             }
         };
+    }
+
+    private void parserSportObject(SportObjectRepository sportObjectRepository, MinioRepository minioRepository, MinioClient minioClient){
+        System.out.println("start process");
+        XSSFWorkbook wb = getWorkBookFromXSSF("./src/main/resources/static/file/sport-object.xlsx");
+        XSSFSheet sheet = wb.getSheet("list");
+        Iterator<Row> rowIter = sheet.rowIterator();
+
+        int count = 0;
+        List<SportObject> sportObjects = new ArrayList<>();
+        while (rowIter.hasNext()) {
+            count++;
+            SportObject sportObject = new SportObject();
+            Row row = rowIter.next();
+            Cell locationCell = row.getCell(0);
+            Cell addressCell = row.getCell(1);
+            Cell titleCell = row.getCell(2);
+            Cell registerDateCell = row.getCell(3);
+            Cell coordsCell = row.getCell(4);
+            Cell urlCell = row.getCell(5);
+            Cell logoCell = row.getCell(6);
+            Cell imageCell = row.getCell(7);
+
+            if(logoCell != null){
+                if(!logoCell.toString().equals("")){
+                    if(imageCell != null){
+                        if(!imageCell.toString().equals("")){
+                            String[] image = imageCell.toString().split(", ");
+                            List<String> images = new ArrayList<>(List.of(image));
+                            sportObject.setLogo(logoCell.toString());
+                            sportObject.setImages(images);
+                        }
+                    }
+                }
+            }
+
+            String location = locationCell.toString();
+            String address = addressCell.toString();
+            String title = titleCell.toString();
+            LocalDate register = getRegisterDate(registerDateCell.toString());
+
+            String coords = "";
+            if(coordsCell != null){
+                if(!coordsCell.toString().equals("")){
+                    coords = coordsCell.toString();
+                    String[] part = coords.split(", ");
+                    float s = Float.parseFloat(part[0]);
+                    float d = Float.parseFloat(part[1]);
+                    sportObject.setS(s);
+                    sportObject.setD(d);
+                }
+            }
+
+            sportObject.setTitle(title);
+            sportObject.setLocation(location);
+            sportObject.setAddress(address);
+            sportObject.setRegisterDate(register);
+            if(urlCell != null){
+                if(!urlCell.toString().equals("")){
+                    sportObject.setUrl(urlCell.toString());
+                }
+            }
+            sportObjects.add(sportObject);
+        }
+
+        for(SportObject sportObject : sportObjects){
+
+            minioService(minioClient,"logo", sportObject.getLogo());
+
+            /*if(sportObject.getS() == 0.0f){
+                try {
+                    String[] part = sportObject.getAddress().split(", ");
+                    String add = "";
+                    for(int i=2; i<part.length; i++){
+                        add += part[i];
+                    }
+                    GeoDate geoDate = getCoords(add);
+
+                } catch (IOException | URISyntaxException e) {
+                    throw new RuntimeException(e);
+                }
+            }*/
+        }
+
+        try {
+            wb.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println("end process");
+    }
+
+    private GeoDate getCoords(String address) throws IOException, URISyntaxException {
+        String apiKey = "AqvShZnoih8TXASgC7kM2gk-4FEylZMPa_S1E5TYsZu3SfH8czu80D86osszgrYo";
+        String urlString = "https://dev.virtualearth.net/REST/v1/Locations?query=" + URLEncoder.encode(address, StandardCharsets.UTF_8) + "&key=" + apiKey;
+        URI uri = new URI(urlString);
+        URL url = uri.toURL();
+
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+
+        StringBuilder response = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            response.append(line);
+        }
+        String answer = response.toString();
+
+        Pattern pattern = Pattern.compile("\"coordinates\":\\s*\\[(\\d+\\.\\d+),\\s*(\\d+\\.\\d+)\\]");
+        Matcher matcher = pattern.matcher(answer);
+        float s = 0,d = 0;
+        if (matcher.find()) {
+            String latitude = matcher.group(1);
+            String longitude = matcher.group(2);
+            s = Float.parseFloat(latitude);
+            d = Float.parseFloat(longitude);
+        }
+
+        reader.close();
+
+        GeoDate geoDate = new GeoDate();
+        geoDate.setS(s);
+        geoDate.setD(d);
+        if(s == 0.0f){
+            geoDate.setS(55.755863f);
+            geoDate.setD(37.617700f);
+        }
+
+        return geoDate;
+    }
+
+    @Data
+    class GeoDate{
+        private float s;
+        private float d;
+    }
+
+    private LocalDate getRegisterDate(String date){
+        LocalDate localDate = LocalDate.now();
+        if(!date.equals("")) {
+            String[] part = date.split("-");
+            DateTimeFormatter formatter;
+            if (part.length > 1) {
+                formatter = DateTimeFormatter.ofPattern("dd-MMM-yyyy", new Locale("ru"));
+            } else {
+                formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+            }
+            localDate = LocalDate.parse(date, formatter);
+        }
+        return localDate;
     }
 
     private void parseEkp(EkpRepository ekpRepository, SportRepository sportRepository, DisciplineRepository disciplineRepository){
@@ -311,5 +474,14 @@ public class DatabasePreConfiguration {
             case "ДФО" -> FederalDistrict.DFO;
             default -> null;
         };
+    }
+
+    public MinioResponse minioService(MinioClient minioClient,String sub, String name){
+        String filePath = "./src/main/resources/static/img/" + sub + "/" + name;
+        File file = new File(filePath);
+        if(file.exists()){
+            System.out.println("Exist!");
+        }
+        return null;
     }
 }
