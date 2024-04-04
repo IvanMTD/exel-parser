@@ -52,22 +52,11 @@ public class Participant {
         sportSchoolIds.add(sportSchoolId);
     }
 
-    public void addQualification(Qualification qualification){
-        if (qualificationIds == null){
-            qualificationIds = new HashSet<>();
-        }
-        qualificationIds.add(qualification.getId());
-    }
-
     public void addQualificationId(int qualificationId){
         if (qualificationIds == null){
             qualificationIds = new HashSet<>();
         }
         qualificationIds.add(qualificationId);
-    }
-
-    public String getFullName(){
-        return lastname + " " + name + " " + middleName;
     }
 
     public String getDate(){

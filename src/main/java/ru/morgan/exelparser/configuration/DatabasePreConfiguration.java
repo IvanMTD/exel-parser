@@ -3,7 +3,11 @@ package ru.morgan.exelparser.configuration;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.minio.MinioClient;
+import io.minio.ObjectWriteResponse;
+import io.minio.PutObjectArgs;
+import io.minio.errors.*;
 import lombok.Data;
+import lombok.SneakyThrows;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -16,10 +20,16 @@ import org.springframework.web.client.RestTemplate;
 import ru.morgan.exelparser.models.*;
 import ru.morgan.exelparser.models.map.GeocodeResponse;
 import ru.morgan.exelparser.repositories.*;
+import ru.morgan.exelparser.utils.StringGenerator;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -34,7 +44,7 @@ public class DatabasePreConfiguration {
             SportRepository sportRepository,
             DisciplineRepository disciplineRepository,
             SportObjectRepository sportObjectRepository,
-            MinioRepository minioRepository
+            MinioFileRepository minioRepository
     ){
         return new CommandLineRunner() {
             @Override
@@ -49,7 +59,7 @@ public class DatabasePreConfiguration {
         };
     }
 
-    private void parserSportObject(SportObjectRepository sportObjectRepository, MinioRepository minioRepository, MinioClient minioClient){
+    private void parserSportObject(SportObjectRepository sportObjectRepository, MinioFileRepository minioFileRepository, MinioClient minioClient){
         System.out.println("start process");
         XSSFWorkbook wb = getWorkBookFromXSSF("./src/main/resources/static/file/sport-object.xlsx");
         XSSFSheet sheet = wb.getSheet("list");
@@ -58,65 +68,82 @@ public class DatabasePreConfiguration {
         int count = 0;
         List<SportObject> sportObjects = new ArrayList<>();
         while (rowIter.hasNext()) {
-            count++;
-            SportObject sportObject = new SportObject();
-            Row row = rowIter.next();
-            Cell locationCell = row.getCell(0);
-            Cell addressCell = row.getCell(1);
-            Cell titleCell = row.getCell(2);
-            Cell registerDateCell = row.getCell(3);
-            Cell coordsCell = row.getCell(4);
-            Cell urlCell = row.getCell(5);
-            Cell logoCell = row.getCell(6);
-            Cell imageCell = row.getCell(7);
+            if(count >= 0) {
+                SportObject sportObject = new SportObject();
+                Row row = rowIter.next();
+                Cell locationCell = row.getCell(0);
+                Cell addressCell = row.getCell(1);
+                Cell titleCell = row.getCell(2);
+                Cell registerDateCell = row.getCell(3);
+                Cell coordsCell = row.getCell(4);
+                Cell urlCell = row.getCell(5);
+                Cell logoCell = row.getCell(6);
+                Cell imageCell = row.getCell(7);
 
-            if(logoCell != null){
-                if(!logoCell.toString().equals("")){
-                    if(imageCell != null){
-                        if(!imageCell.toString().equals("")){
-                            String[] image = imageCell.toString().split(", ");
-                            List<String> images = new ArrayList<>(List.of(image));
-                            sportObject.setLogo(logoCell.toString());
-                            sportObject.setImages(images);
+                if (logoCell != null) {
+                    if (!logoCell.toString().equals("")) {
+                        if (imageCell != null) {
+                            if (!imageCell.toString().equals("")) {
+                                String[] image = imageCell.toString().split(", ");
+                                List<String> images = new ArrayList<>(List.of(image));
+                                sportObject.setLogo(logoCell.toString());
+                                sportObject.setImages(images);
+
+                                String location = locationCell.toString();
+                                String address = addressCell.toString();
+                                String title = titleCell.toString();
+                                LocalDate register = getRegisterDate(registerDateCell.toString());
+
+                                String coords = "";
+                                if (coordsCell != null) {
+                                    if (!coordsCell.toString().equals("")) {
+                                        coords = coordsCell.toString();
+                                        String[] part = coords.split(", ");
+                                        float s = Float.parseFloat(part[0]);
+                                        float d = Float.parseFloat(part[1]);
+                                        sportObject.setS(s);
+                                        sportObject.setD(d);
+                                    }
+                                }
+
+                                sportObject.setTitle(title);
+                                sportObject.setLocation(location);
+                                sportObject.setAddress(address);
+                                sportObject.setRegisterDate(register);
+                                if (urlCell != null) {
+                                    if (!urlCell.toString().equals("")) {
+                                        sportObject.setUrl(urlCell.toString());
+                                    }
+                                }
+                                sportObjects.add(sportObject);
+                            }
                         }
                     }
                 }
             }
-
-            String location = locationCell.toString();
-            String address = addressCell.toString();
-            String title = titleCell.toString();
-            LocalDate register = getRegisterDate(registerDateCell.toString());
-
-            String coords = "";
-            if(coordsCell != null){
-                if(!coordsCell.toString().equals("")){
-                    coords = coordsCell.toString();
-                    String[] part = coords.split(", ");
-                    float s = Float.parseFloat(part[0]);
-                    float d = Float.parseFloat(part[1]);
-                    sportObject.setS(s);
-                    sportObject.setD(d);
-                }
-            }
-
-            sportObject.setTitle(title);
-            sportObject.setLocation(location);
-            sportObject.setAddress(address);
-            sportObject.setRegisterDate(register);
-            if(urlCell != null){
-                if(!urlCell.toString().equals("")){
-                    sportObject.setUrl(urlCell.toString());
-                }
-            }
-            sportObjects.add(sportObject);
+            count++;
         }
 
         for(SportObject sportObject : sportObjects){
+            if(sportObject.getLogo() != null){
+                MinioResponse logoResponse = minioService(minioClient,"logo", sportObject.getLogo());
+                if(logoResponse != null) {
+                    long logoId = minioSave(logoResponse, minioFileRepository).getId();
+                    Set<Long> imageIds = new HashSet<>();
+                    for (String image : sportObject.getImages()) {
+                        MinioResponse imageResponse = minioService(minioClient, "foto", image);
+                        if(imageResponse != null) {
+                            long id = minioSave(imageResponse, minioFileRepository).getId();
+                            imageIds.add(id);
+                        }
+                    }
+                    sportObject.setLogoId(logoId);
+                    sportObject.setImageIds(imageIds);
+                }
+            }
 
-            minioService(minioClient,"logo", sportObject.getLogo());
 
-            /*if(sportObject.getS() == 0.0f){
+            if(sportObject.getS() == 0.0f){
                 try {
                     String[] part = sportObject.getAddress().split(", ");
                     String add = "";
@@ -124,11 +151,15 @@ public class DatabasePreConfiguration {
                         add += part[i];
                     }
                     GeoDate geoDate = getCoords(add);
-
+                    System.out.println(geoDate);
+                    sportObject.setS(geoDate.getS());
+                    sportObject.setD(geoDate.getD());
                 } catch (IOException | URISyntaxException e) {
-                    throw new RuntimeException(e);
+                    System.out.println(e);
                 }
-            }*/
+            }
+
+            sportObjectRepository.save(sportObject);
         }
 
         try {
@@ -137,6 +168,23 @@ public class DatabasePreConfiguration {
             throw new RuntimeException(e);
         }
         System.out.println("end process");
+    }
+
+    private MinioFile minioSave(MinioResponse response, MinioFileRepository repository){
+        if(response.getResponse() != null) {
+            MinioFile minioFile = new MinioFile();
+            minioFile.setUid(response.getUid());
+            minioFile.setName(response.getOriginalFileName());
+            minioFile.setType(response.getType());
+            minioFile.setETag(response.getResponse().etag());
+            minioFile.setBucket(response.getResponse().bucket());
+            minioFile.setPath(response.getResponse().object());
+            minioFile.setMinioUrl(response.getResponse().region() != null ? response.getResponse().region() : "no url");
+            minioFile.setFileSize(response.getFileSize());
+            return repository.save(minioFile);
+        }else{
+            return new MinioFile();
+        }
     }
 
     private GeoDate getCoords(String address) throws IOException, URISyntaxException {
@@ -161,8 +209,10 @@ public class DatabasePreConfiguration {
         if (matcher.find()) {
             String latitude = matcher.group(1);
             String longitude = matcher.group(2);
-            s = Float.parseFloat(latitude);
-            d = Float.parseFloat(longitude);
+            if(latitude.length() <= 11) {
+                s = Float.parseFloat(latitude);
+                d = Float.parseFloat(longitude);
+            }
         }
 
         reader.close();
@@ -477,11 +527,63 @@ public class DatabasePreConfiguration {
     }
 
     public MinioResponse minioService(MinioClient minioClient,String sub, String name){
-        String filePath = "./src/main/resources/static/img/" + sub + "/" + name;
+        String bucket = "upload";
+        String directory = "./src/main/resources/static/temp/";
+        String filePath = "./src/main/resources/static/" + sub + "/" + name;
         File file = new File(filePath);
+        MinioResponse minioResponse = new MinioResponse();
         if(file.exists()){
-            System.out.println("Exist!");
+            System.out.println("file " + file.getName() + " exist");
+            String extension = "webp";
+            String randomWord = StringGenerator.getGeneratedString(30);
+            String uid = randomWord + "." + extension;
+            String tempName = StringGenerator.getGeneratedString(20);
+            try {
+                System.out.println("try upload " + tempName);
+                String temp = directory + tempName + "." + extension;
+                InputStream fileInputStream = new FileInputStream(file);
+                BufferedImage bufferedImage = ImageIO.read(fileInputStream);
+                boolean completed = ImageIO.write(bufferedImage, "webp", new File(temp));
+                if (completed) {
+                    System.out.println("completed! do next!");
+                    File webpImage = new File(temp);
+                    InputStream webpImageInputStream = new FileInputStream(webpImage);
+                    String type = "image/webp";
+                    PutObjectArgs args = PutObjectArgs.builder()
+                            .bucket(bucket)
+                            .object("/" + type + "/" + uid)
+                            .contentType(type)
+                            .stream(webpImageInputStream, -1, 10485760)
+                            .build();
+                    ObjectWriteResponse response = minioClient.putObject(args);
+                    minioResponse.setResponse(response);
+                    minioResponse.setOriginalFileName(file.getName());
+                    minioResponse.setUid(uid);
+                    minioResponse.setType(type);
+                    minioResponse.setFileSize((float)fileInputStream.available() / 1048576.0f);
+                    fileInputStream.close();
+                    webpImageInputStream.close();
+                    cleanup(directory, tempName);
+                    return minioResponse;
+                }
+            } catch (ServerException | InsufficientDataException | ErrorResponseException |
+                     NoSuchAlgorithmException | InvalidKeyException | InvalidResponseException |
+                     XmlParserException | InternalException | IOException e) {
+                throw  new RuntimeException(e);
+            }
         }
         return null;
+    }
+
+    @SneakyThrows
+    private void cleanup(String directory, String tempName) {
+        File f1 = new File(directory + tempName);
+        File f2 = new File(directory + tempName + ".webp");
+        if (f1.exists()) {
+            Files.delete(f1.toPath());
+        }
+        if (f2.exists()) {
+            Files.delete(f2.toPath());
+        }
     }
 }
