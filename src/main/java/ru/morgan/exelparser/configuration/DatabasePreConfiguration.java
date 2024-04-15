@@ -39,12 +39,12 @@ public class DatabasePreConfiguration {
         return new CommandLineRunner() {
             @Override
             public void run(String... args) throws Exception {
-                MinioClient minioClient = MinioClient.builder()
+                /*MinioClient minioClient = MinioClient.builder()
                         .endpoint("http://45.95.234.119:9000")
                         .credentials("morgan", "Vjh911ufy!")
-                        .build();
-                //parseEkp(ekpRepository,sportRepository,disciplineRepository);
-                parserSportObject(sportObjectRepository, minioRepository, minioClient);
+                        .build();*/
+                parseEkp(ekpRepository,sportRepository,disciplineRepository);
+                //parserSportObject(sportObjectRepository, minioRepository, minioClient);
             }
         };
     }
@@ -201,11 +201,16 @@ public class DatabasePreConfiguration {
 
     private void parseEkp(EkpRepository ekpRepository, SportRepository sportRepository, DisciplineRepository disciplineRepository){
         System.out.println("start process");
-        XSSFWorkbook wb = getWorkBookFromXSSF("./src/main/resources/static/file/ekp-2.xlsx");
+        XSSFWorkbook wb = getWorkBookFromXSSF("./src/main/resources/static/file/ekp-3.xlsx");
         XSSFSheet sheet = wb.getSheet("list");
         Iterator<Row> rowIter = sheet.rowIterator();
 
-        String apiKey = "9a4e8022-c477-4474-8a6e-e117646f9c85";
+        /*9a4e8022-c477-4474-8a6e-e117646f9c85 - ключ Димы +*/
+        /*f5aede27-f6c6-4c8d-b65c-0b03e09357dc - domensport.ru* +/
+        /*137ef6a7-52e7-45e6-8fb9-a04ffa009134 - Мой ключ + */
+        /*7c13cf7d-c937-4ca6-8021-145ac16bdcae мой ключ */
+        /*597949f0-988f-4938-8e44-e4c0aead5872 - Дима 2 +*/
+        String apiKey = "7c13cf7d-c937-4ca6-8021-145ac16bdcae";
         String url = "https://geocode-maps.yandex.ru/1.x";
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -224,67 +229,91 @@ public class DatabasePreConfiguration {
             Cell ending = row.getCell(7);
             Cell address = row.getCell(8);
 
-            if(count >= 0) {
-                GeocodeResponse geocodeResponse = null;
-
-                if (address != null) {
-                    if(!address.toString().equals("")) {
-                        try {
-                            String urlWithParams = url + "?apikey=" + apiKey + "&geocode=" + address.toString() + "&format=json";
-                            ResponseEntity<String> response = restTemplate.getForEntity(urlWithParams, String.class);
-                            geocodeResponse = objectMapper.readValue(response.getBody(), GeocodeResponse.class);
-                        } catch (Exception e) {
-                            throw new RuntimeException(e);
-                        }
+            if(2500 < count && count < 3500) {
+                if (beginning != null && ending != null) {
+                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MMM-yyyy", new Locale("ru"));
+                    LocalDate begin = LocalDate.now();
+                    if(!beginning.toString().equals("")){
+                        begin = LocalDate.parse(beginning.toString(), formatter);
                     }
-                }
-
-                if (geocodeResponse != null) {
-                    if (geocodeResponse.getResponse().getGeoObjectCollection().getFeatureMember().size() != 0) {
-                        String[] location = geocodeResponse.getResponse().getGeoObjectCollection().getFeatureMember().get(0).getGeoObject().getPoint().getPos().split(" ");
-                        float s = Float.parseFloat(location[1]);
-                        float d = Float.parseFloat(location[0]);
-                        if (beginning != null && ending != null) {
-                            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MMM-yyyy", new Locale("ru"));
-                            LocalDate begin = LocalDate.parse(beginning.toString(), formatter);
-                            LocalDate end = LocalDate.parse(ending.toString(), formatter);
-                            Sport sport = sportRepository.findByTitleLikeIgnoreCase(sportName.toString());
-                            long sid = sport.getId();
-                            Set<Long> dids = new HashSet<>();
-                            if (discipline != null) {
-                                String[] dis = discipline.toString().split(", ");
-                                for (int i = 0; i < dis.length; i++) {
-                                    List<Discipline> disciplineList = disciplineRepository.findByTitleLikeIgnoreCase(dis[i]);
-                                    if (disciplineList != null) {
-                                        for (Discipline discipline2 : disciplineList) {
-                                            if (discipline2.getSportId() == sport.getId()) {
-                                                long did = discipline2.getId();
-                                                dids.add(did);
-                                            }
+                    LocalDate end = LocalDate.now();
+                    if(!ending.toString().equals("")){
+                        end = LocalDate.parse(ending.toString(), formatter);
+                    }
+                    Sport sport = sportRepository.findByTitleLikeIgnoreCase(sportName.toString());
+                    if (sport != null) {
+                        long sid = sport.getId();
+                        Set<Long> dids = new HashSet<>();
+                        if (discipline != null) {
+                            String[] dis = discipline.toString().split(", ");
+                            for (String di : dis) {
+                                List<Discipline> disciplineList = disciplineRepository.findByTitleLikeIgnoreCase(di);
+                                if (disciplineList != null) {
+                                    for (Discipline discipline2 : disciplineList) {
+                                        if (discipline2.getSportId() == sport.getId()) {
+                                            long did = discipline2.getId();
+                                            dids.add(did);
                                         }
                                     }
                                 }
-                                if (dids.size() != 0) {
-                                    Status status = parseStatus(statusName.toString());
-                                    Ekp ekp = new Ekp();
-                                    ekp.setEkp(ekpNum.toString());
-                                    ekp.setTitle(title.toString());
-                                    ekp.setDescription("У данного мероприятия нету описания");
-                                    ekp.setLocation(address.toString());
-                                    ekp.setOrganization("Министерство спорта РФ");
-                                    ekp.setBeginning(begin);
-                                    ekp.setEnding(end);
-                                    ekp.setSportId(sid);
-                                    ekp.setDisciplineIds(dids);
-                                    ekp.setS(s);
-                                    ekp.setD(d);
-                                    ekp.setCategory(groups.toString());
-                                    ekp.setStatus(status);
-                                    ekpRepository.save(ekp);
-                                }
                             }
+                            if (dids.size() != 0) {
+
+                                GeocodeResponse geocodeResponse = null;
+
+                                if (address != null) {
+                                    if(!address.toString().equals("")) {
+                                        try {
+                                            String urlWithParams = url + "?apikey=" + apiKey + "&geocode=" + address.toString() + "&format=json";
+                                            ResponseEntity<String> response = restTemplate.getForEntity(urlWithParams, String.class);
+                                            geocodeResponse = objectMapper.readValue(response.getBody(), GeocodeResponse.class);
+                                        } catch (Exception e) {
+                                            throw new RuntimeException(e);
+                                        }
+                                    }
+                                }
+
+                                if (geocodeResponse != null) {
+                                    if (geocodeResponse.getResponse().getGeoObjectCollection().getFeatureMember().size() != 0) {
+                                        String[] location = geocodeResponse.getResponse().getGeoObjectCollection().getFeatureMember().get(0).getGeoObject().getPoint().getPos().split(" ");
+                                        float s = Float.parseFloat(location[1]);
+                                        float d = Float.parseFloat(location[0]);
+
+                                        Status status = parseStatus(statusName.toString());
+                                        Ekp ekp = new Ekp();
+                                        ekp.setEkp(ekpNum.toString());
+                                        ekp.setTitle(title.toString());
+                                        ekp.setDescription("У данного мероприятия нет описания");
+                                        ekp.setLocation(address.toString());
+                                        ekp.setOrganization("Министерство спорта РФ");
+                                        ekp.setBeginning(begin);
+                                        ekp.setEnding(end);
+                                        ekp.setSportId(sid);
+                                        ekp.setDisciplineIds(dids);
+                                        ekp.setS(s);
+                                        ekp.setD(d);
+                                        ekp.setCategory(groups.toString());
+                                        ekp.setStatus(status);
+                                        Ekp savedEkp = ekpRepository.save(ekp);
+                                        System.out.println(savedEkp);
+                                        break;
+                                    }else{
+                                        System.out.println("geo-response error - " + count);
+                                    }
+                                }else{
+                                    System.out.println(count + " geo-null");
+                                }
+                            }else{
+                                System.out.println("dids 0");
+                            }
+                        }else{
+                            System.out.println("дисциплины ноль");
                         }
+                    } else {
+                        System.out.println(sportName.toString());
                     }
+                }else{
+                    System.out.println(count + "Проблема с датами ");
                 }
             }
             count++;
