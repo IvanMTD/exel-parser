@@ -29,10 +29,5 @@ public class AgeGroup {
     private String title;
     private int minAge;
     private int maxAge;
-    private int disciplineId;
-    private Set<Integer> qualificationIds = new HashSet<>();
-
-    public void addQualification(Qualification qualification){
-        qualificationIds.add(qualification.getId());
-    }
+    private int typeOfSportId;
 }

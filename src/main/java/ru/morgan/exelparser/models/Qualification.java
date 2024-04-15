@@ -22,6 +22,6 @@ public class Qualification {
     private int id;
     @Enumerated(EnumType.STRING)
     private Category category;
-    private int ageGroupId;
+    private int typeOfSportId;
     private int participantId;
 }

@@ -20,6 +20,7 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -34,11 +35,36 @@ public class Participant {
     private String middleName;
     private String lastname;
     private LocalDate birthday;
-    private Set<Integer> subjectIds = new HashSet<>();
+    private Set<Integer> sportSchoolIds = new HashSet<>();
     private Set<Integer> qualificationIds = new HashSet<>();
 
-    public void addSubject(Subject subject){
-        subjectIds.add(subject.getId());
+    public void addSportSchool(SportSchool sportSchool){
+        if(sportSchoolIds == null){
+            sportSchoolIds = new HashSet<>();
+        }
+        sportSchoolIds.add(sportSchool.getId());
+    }
+
+    public void addSportSchoolId(int sportSchoolId){
+        if(sportSchoolIds == null){
+            sportSchoolIds = new HashSet<>();
+        }
+        sportSchoolIds.add(sportSchoolId);
+    }
+
+    public void addQualificationId(int qualificationId){
+        if (qualificationIds == null){
+            qualificationIds = new HashSet<>();
+        }
+        qualificationIds.add(qualificationId);
+    }
+
+    public String getDate(){
+        return DateTimeFormatter.ofPattern("dd.MM.yyyy").format(birthday);
+    }
+
+    public int getAge(){
+        return LocalDate.now().getYear() - birthday.getYear();
     }
 
     public void addQualification(Qualification qualification) {

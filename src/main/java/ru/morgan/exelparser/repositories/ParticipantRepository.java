@@ -7,4 +7,6 @@ import java.time.LocalDate;
 
 public interface ParticipantRepository extends CrudRepository<Participant, Integer> {
     Participant findByLastnameAndNameAndBirthday(String lastname, String name, LocalDate birthday);
+
+    Participant findByLastnameAndNameAndMiddleNameAndBirthday(String lastname, String name, String middleName, LocalDate birthday);
 }
