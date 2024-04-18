@@ -37,4 +37,15 @@ public class MinioFile {
         setMinioUrl(minioFile.getMinioUrl());
         setFileSize(minioFile.getFileSize());
     }
+
+    public MinioFile(MinioResponse minioResponse){
+        setUid(minioResponse.getUid());
+        setName(minioResponse.getOriginalFileName());
+        setType(minioResponse.getType());
+        setETag(minioResponse.getResponse().etag());
+        setBucket(minioResponse.getResponse().bucket());
+        setPath(minioResponse.getResponse().object());
+        setMinioUrl(minioResponse.getResponse().region() != null ? minioResponse.getResponse().region() : "no url");
+        setFileSize(minioResponse.getFileSize());
+    }
 }

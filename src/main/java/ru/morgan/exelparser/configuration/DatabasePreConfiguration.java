@@ -3,7 +3,11 @@ package ru.morgan.exelparser.configuration;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.minio.MinioClient;
+import io.minio.ObjectWriteResponse;
+import io.minio.PutObjectArgs;
+import io.minio.errors.*;
 import lombok.Data;
+import lombok.SneakyThrows;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -12,14 +16,23 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.web.client.RestTemplate;
 import ru.morgan.exelparser.models.*;
 import ru.morgan.exelparser.models.map.GeocodeResponse;
 import ru.morgan.exelparser.repositories.*;
+import ru.morgan.exelparser.utils.CustomFileUtil;
+import ru.morgan.exelparser.utils.StringGenerator;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -34,7 +47,8 @@ public class DatabasePreConfiguration {
             SportRepository sportRepository,
             DisciplineRepository disciplineRepository,
             SportObjectRepository sportObjectRepository,
-            MinioRepository minioRepository
+            SchoolRepository schoolRepository,
+            MinioFileRepository minioRepository
     ){
         return new CommandLineRunner() {
             @Override
@@ -43,13 +57,160 @@ public class DatabasePreConfiguration {
                         .endpoint("http://45.95.234.119:9000")
                         .credentials("morgan", "Vjh911ufy!")
                         .build();*/
-                parseEkp(ekpRepository,sportRepository,disciplineRepository);
+                //parseEkp(ekpRepository,sportRepository,disciplineRepository);
                 //parserSportObject(sportObjectRepository, minioRepository, minioClient);
+                //parseSchools(schoolRepository,minioRepository,minioClient);
+                setSubjectForSchools(schoolRepository);
             }
         };
     }
 
-    private void parserSportObject(SportObjectRepository sportObjectRepository, MinioRepository minioRepository, MinioClient minioClient){
+    private void setSubjectForSchools(SchoolRepository schoolRepository){
+        long count = schoolRepository.count();
+        System.out.println("Заявлено: " + count);
+        int counter = 0;
+        for(long i=1; i<=count; i++){
+            Optional<School> schoolOptional = schoolRepository.findById(i);
+            if (schoolOptional.isPresent()){
+                School school = schoolOptional.get();
+                String[] part = school.getAddress().split(", ");
+                school.setSubject(part[1]);
+                schoolRepository.save(school);
+                counter++;
+            }
+        }
+        System.out.println("Реально найдено: " + counter);
+    }
+
+    private void parseSchools(SchoolRepository schoolRepository, MinioFileRepository minioFileRepository, MinioClient minioClient){
+        System.out.println("start process");
+        XSSFWorkbook wb = getWorkBookFromXSSF("./src/main/resources/static/file/schools.xlsx");
+        XSSFSheet sheet = wb.getSheet("list");
+        Iterator<Row> rowIter = sheet.rowIterator();
+
+        int count = 0;
+        while (rowIter.hasNext()) {
+            Row row = rowIter.next();
+            Cell OGRNCell = row.getCell(0);
+            Cell schoolNameCell = row.getCell(1);
+            Cell indexCell = row.getCell(2);
+            Cell addressCell = row.getCell(3);
+            Cell coordsCell = row.getCell(4);
+            Cell urlCell = row.getCell(7);
+            Cell imageCell = row.getCell(8);
+
+            // 1 ЭТАП СОБИРАЕМ ОГРН
+            String OGRN = null;
+            if(OGRNCell != null){
+                if(!OGRNCell.toString().equals("")){
+                    DataFormatter dataFormatter = new DataFormatter();
+                    OGRN = dataFormatter.formatCellValue(OGRNCell);
+                }
+            }
+
+            // 2 ЭТАП СОБИРАЕМ ПОЛНОЕ НАЗВАНИЕ ШКОЛЫ
+            String schoolName = null;
+            if(schoolNameCell != null){
+                if(!schoolNameCell.toString().equals("")){
+                    schoolName = schoolNameCell.toString();
+                }
+            }
+
+            // 3 ЭТАП СОБИРАЕМ ИНДЕКС
+            String index = null;
+            if(indexCell != null){
+                if(!indexCell.toString().equals("")){
+                    Pattern pattern = Pattern.compile("\\d{6}");
+                    Matcher matcher = pattern.matcher(indexCell.toString());
+                    if(matcher.find()) {
+                        index = matcher.group();
+                    }
+                }
+            }
+
+            // 4 ЭТАП СБОР АДРЕСОВ
+            String address = null;
+            if(addressCell != null){
+                if(!addressCell.toString().equals("")){
+                    address = addressCell.toString();
+                }
+            }
+
+            // 5 ЭТАП СБОР КООРДИНАТ
+            String s = null;
+            String d = null;
+            if(coordsCell != null){
+                if(!coordsCell.toString().equals("")){
+                    String[] part = coordsCell.toString().split(", ");
+                    if(part.length > 1) {
+                        s = part[0];
+                        d = part[1];
+                    }
+                }
+            }
+
+            // 6 СБЛО URL
+            String url = null;
+            if(urlCell != null){
+                if(!urlCell.toString().equals("")){
+                    url = urlCell.toString();
+                }
+            }
+
+            // 7 Сбор изображений
+            String logo = null;
+            String photo = null;
+            if(imageCell != null){
+                if(!imageCell.toString().equals("")){
+                    String[] part = imageCell.toString().split(", ");
+                    if(part.length == 2){
+                        logo = part[0];
+                        photo = part[1];
+                    }
+                }
+            }
+
+            if(OGRN != null && schoolName != null && index != null && address != null && s != null && d != null && url != null && logo != null && photo != null){
+                MinioResponse logoResponse = minioService(minioClient,"logo", logo);
+                MinioResponse photoResponse = minioService(minioClient,"photo", photo);
+                if(logoResponse != null && photoResponse != null){
+                    MinioFile logoFile = new MinioFile(logoResponse);
+                    MinioFile photoFile = new MinioFile(photoResponse);
+                    logoFile = minioFileRepository.save(logoFile);
+                    photoFile = minioFileRepository.save(photoFile);
+
+                    School school = new School();
+                    school.setOgrn(Long.parseLong(OGRN));
+                    school.setName(schoolName);
+                    school.setIndex(Integer.parseInt(index));
+                    school.setAddress(address);
+                    school.setS(Float.parseFloat(s));
+                    school.setD(Float.parseFloat(d));
+                    school.setUrl(url);
+                    school.setLogoId(logoFile.getId());
+                    school.setPhotoId(photoFile.getId());
+
+                    school = schoolRepository.save(school);
+
+                    System.out.println("Школа сохранена: " + school);
+
+                    count++;
+                }
+            }
+        }
+
+        System.out.println("Всего записей: " + count);
+
+
+        try {
+            wb.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println("end process");
+    }
+
+    private void parserSportObject(SportObjectRepository sportObjectRepository, MinioFileRepository minioRepository, MinioClient minioClient){
         System.out.println("start process");
         XSSFWorkbook wb = getWorkBookFromXSSF("./src/main/resources/static/file/sport-object.xlsx");
         XSSFSheet sheet = wb.getSheet("list");
@@ -296,7 +457,6 @@ public class DatabasePreConfiguration {
                                         ekp.setStatus(status);
                                         Ekp savedEkp = ekpRepository.save(ekp);
                                         System.out.println(savedEkp);
-                                        break;
                                     }else{
                                         System.out.println("geo-response error - " + count);
                                     }
@@ -509,8 +669,66 @@ public class DatabasePreConfiguration {
         String filePath = "./src/main/resources/static/img/" + sub + "/" + name;
         File file = new File(filePath);
         if(file.exists()){
-            System.out.println("Exist!");
+            return uploadImage(file,minioClient);
         }
         return null;
+    }
+
+    public MinioResponse uploadImage(File file, MinioClient minioClient) {
+        //Путь к временной директории
+        String directory = "./src/main/resources/static/img/temp";
+        //Случайное имя файла
+        String tempName = StringGenerator.getGeneratedString(20);
+        // Формируем UID
+        String extension = "webp";
+        String randomWord = StringGenerator.getGeneratedString(30);
+        String uid = randomWord + "." + extension;
+
+        try {
+            String temp = directory + tempName + "." + extension;
+            InputStream fileInputStream = new FileInputStream(file);
+            BufferedImage bufferedImage = ImageIO.read(fileInputStream);
+            boolean completed = ImageIO.write(bufferedImage, "webp", new File(temp));
+            if (completed) {
+                File webpImage = new File(temp);
+                InputStream webpImageInputStream = new FileInputStream(webpImage);
+                String type = "image/webp";
+                PutObjectArgs args = PutObjectArgs.builder()
+                        .bucket("upload")
+                        .object("/" + type + "/" + uid)
+                        .contentType(type)
+                        .stream(webpImageInputStream, -1, 10485760)
+                        .build();
+                ObjectWriteResponse response = minioClient.putObject(args);
+                MinioResponse minioResponse = new MinioResponse();
+                minioResponse.setResponse(response);
+                minioResponse.setOriginalFileName(file.getName());
+                minioResponse.setUid(uid);
+                minioResponse.setType(type);
+                minioResponse.setFileSize(CustomFileUtil.getMegaBytes(fileInputStream.available()));
+                fileInputStream.close();
+                webpImageInputStream.close();
+                cleanup(directory, tempName);
+                return minioResponse;
+            } else {
+                return null;
+            }
+        } catch (ServerException | InsufficientDataException | ErrorResponseException |
+                 NoSuchAlgorithmException | InvalidKeyException | InvalidResponseException |
+                 XmlParserException | InternalException | IOException e) {
+            throw  new RuntimeException(e);
+        }
+    }
+
+    @SneakyThrows
+    private void cleanup(String directory, String tempName) {
+        File f1 = new File(directory + tempName);
+        File f2 = new File(directory + tempName + ".webp");
+        if (f1.exists()) {
+            Files.delete(f1.toPath());
+        }
+        if (f2.exists()) {
+            Files.delete(f2.toPath());
+        }
     }
 }
